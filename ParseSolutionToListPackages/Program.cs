@@ -2,116 +2,87 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-class Program
+namespace CsprojFinder
 {
-    static void Main(string[] args)
+    class Program
     {
-        Console.WriteLine("Please enter the path to your directory containing the solution:");
-        var directoryPath = Console.ReadLine();
-
-        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        static void Main(string[] args)
         {
-            Console.WriteLine("Invalid directory path. Please make sure the path is correct and try again.");
-            return;
-        }
+            Console.WriteLine("Please enter the path to your directory containing the solution:");
+            var rootDirectory = Console.ReadLine();
+                        
+            string outputFile = rootDirectory;
 
-        var solutionFile = Directory.GetFiles(directoryPath, "*.sln").FirstOrDefault();
-        if (solutionFile == null)
-        {
-            Console.WriteLine("No solution (.sln) file found in the directory.");
-            return;
-        }
-
-        Console.WriteLine($"Using solution file: {solutionFile}");
-
-        try
-        {
-            var projects = ParseSolution(solutionFile);
-            var packages = new List<(string Project, string Package, string Version)>();
-
-            foreach (var projectPath in projects)
+            try
             {
-                ProcessProjectPath(projectPath, packages);
-            }
+                var csprojFiles = Directory.GetFiles(rootDirectory, "*.csproj", SearchOption.AllDirectories).ToList();
 
-            var csvPath = Path.Combine(Path.GetDirectoryName(solutionFile), "packages.csv");
-            WritePackagesToCsv(packages, csvPath);
+                var projectsWithPackages = new List<string>();
 
-            Console.WriteLine($"CSV file generated successfully at: {csvPath}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred: {ex.Message}");
-        }
-    }
-
-    static List<string> ParseSolution(string solutionPath)
-    {
-        var lines = File.ReadAllLines(solutionPath);
-        var projectPaths = new List<string>();
-
-        foreach (var line in lines)
-        {
-            if (line.StartsWith("Project("))
-            {
-                var parts = line.Split('"');
-                if (parts.Length > 3)
+                foreach (var csprojFile in csprojFiles)
                 {
-                    var relativePath = parts[3]; // Assuming this is the relative path
-                    var fullPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(solutionPath), relativePath));
-                    projectPaths.Add(fullPath);
+                    var packages = ExtractPackageReferences(csprojFile);
+                    if (packages.Any())
+                    {
+                        foreach (var package in packages)
+                        {
+                            projectsWithPackages.Add($"{csprojFile},{package.Item1},{package.Item2}");
+                        }
+                    }
+                    else
+                    {
+                        projectsWithPackages.Add($"{csprojFile},,");
+                    }
+                }
+
+                if (projectsWithPackages.Any())
+                {
+                    SaveToCsv(projectsWithPackages, $"{outputFile}\\packages.csv");
+                    Console.WriteLine($"Found and saved details of {projectsWithPackages.Count} .csproj files to {outputFile}.");
+                }
+                else
+                {
+                    Console.WriteLine("No .csproj files found.");
                 }
             }
-        }
-
-        return projectPaths;
-    }
-
-    static void ProcessProjectPath(string projectPath, List<(string Project, string Package, string Version)> packages)
-    {
-        if (File.Exists(projectPath) && projectPath.EndsWith(".csproj"))
-        {
-            var packageReferences = ParseProjectFile(projectPath);
-            packages.AddRange(packageReferences.Select(pr => (Path.GetFileName(projectPath), pr.Package, pr.Version)));
-        }
-        else if (Directory.Exists(projectPath))
-        {
-            var csprojFiles = Directory.GetFiles(projectPath, "*.csproj", SearchOption.AllDirectories);
-            foreach (var csprojFile in csprojFiles)
+            catch (Exception ex)
             {
-                Console.WriteLine($"Found project file: {csprojFile}");
-                var packageReferences = ParseProjectFile(csprojFile);
-                packages.AddRange(packageReferences.Select(pr => (Path.GetFileName(csprojFile), pr.Package, pr.Version)));
+                Console.WriteLine($"An error occurred: {ex.Message}");
             }
         }
-        else
+
+        static List<(string, string)> ExtractPackageReferences(string csprojPath)
         {
-            Console.WriteLine($"Resolved path is not a valid project: {projectPath}");
+            var packageReferences = new List<(string, string)>();
+            var doc = XDocument.Load(csprojPath);
+            var ns = doc.Root.GetDefaultNamespace();
+
+            var packages = doc.Descendants(ns + "PackageReference");
+            foreach (var package in packages)
+            {
+                var name = package.Attribute("Include")?.Value;
+                var version = package.Attribute("Version")?.Value;
+                if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(version))
+                {
+                    packageReferences.Add((name, version));
+                }
+            }
+
+            return packageReferences;
         }
-    }
 
-    static List<(string Package, string Version)> ParseProjectFile(string projectPath)
-    {
-        var xdoc = XDocument.Load(projectPath);
-        var packageReferences = xdoc.Descendants("PackageReference")
-            .Select(pr => (Package: pr.Attribute("Include")?.Value, Version: pr.Attribute("Version")?.Value))
-            .Where(pr => !string.IsNullOrEmpty(pr.Package) && !string.IsNullOrEmpty(pr.Version))
-            .ToList();
-
-        return packageReferences;
-    }
-
-    static void WritePackagesToCsv(List<(string Project, string Package, string Version)> packages, string csvPath)
-    {
-        using var writer = new StreamWriter(csvPath);
-        writer.WriteLine("Project,Package,Version");
-
-        foreach (var package in packages)
+        static void SaveToCsv(List<string> dataLines, string outputFile)
         {
-            writer.WriteLine($"\"{package.Project}\",\"{package.Package}\",\"{package.Version}\"");
+            using (var writer = new StreamWriter(outputFile))
+            {
+                writer.WriteLine("Project Path,Package Name,Package Version"); // Header
+                foreach (var line in dataLines)
+                {
+                    writer.WriteLine(line);
+                }
+            }
         }
     }
 }
