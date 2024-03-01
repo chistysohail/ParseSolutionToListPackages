@@ -9,55 +9,96 @@ class Program
 {
     static void Main(string[] args)
     {
-        Console.WriteLine("Please enter the path to your solution (.sln) file:");
-        var solutionPath = Console.ReadLine(); // Get solution path from user input
+        Console.WriteLine("Please enter the path to your directory containing the solution:");
+        var directoryPath = Console.ReadLine();
 
-        // Validate the input path
-        if (string.IsNullOrWhiteSpace(solutionPath) || !File.Exists(solutionPath))
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
         {
-            Console.WriteLine("Invalid path. Please make sure the path is correct and try again.");
+            Console.WriteLine("Invalid directory path. Please make sure the path is correct and try again.");
             return;
         }
 
-        var projects = ParseSolution(solutionPath);
-        var packages = new List<(string Project, string Package, string Version)>();
-
-        foreach (var projectPath in projects)
+        var solutionFile = Directory.GetFiles(directoryPath, "*.sln").FirstOrDefault();
+        if (solutionFile == null)
         {
-            var packageReferences = ParseProjectFile(projectPath);
-            packages.AddRange(packageReferences.Select(pr => (Project: Path.GetFileName(projectPath), pr.Package, pr.Version)));
+            Console.WriteLine("No solution (.sln) file found in the directory.");
+            return;
         }
 
-        // Assuming the CSV file is to be created in the same directory as the solution file
-        var csvPath = Path.Combine(Path.GetDirectoryName(solutionPath), "packages.csv");
-        WritePackagesToCsv(packages, csvPath);
+        Console.WriteLine($"Using solution file: {solutionFile}");
 
-        Console.WriteLine($"CSV file generated successfully at: {csvPath}");
+        try
+        {
+            var projects = ParseSolution(solutionFile);
+            var packages = new List<(string Project, string Package, string Version)>();
+
+            foreach (var projectPath in projects)
+            {
+                ProcessProjectPath(projectPath, packages);
+            }
+
+            var csvPath = Path.Combine(Path.GetDirectoryName(solutionFile), "packages.csv");
+            WritePackagesToCsv(packages, csvPath);
+
+            Console.WriteLine($"CSV file generated successfully at: {csvPath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred: {ex.Message}");
+        }
     }
 
     static List<string> ParseSolution(string solutionPath)
     {
-        var projectLines = File.ReadAllLines(solutionPath)
-            .Where(line => line.StartsWith("Project("))
-            .ToList();
+        var lines = File.ReadAllLines(solutionPath);
+        var projectPaths = new List<string>();
 
-        var projectPaths = projectLines
-            .Select(line =>
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("Project("))
             {
-                var matches = Regex.Match(line, "\"(.*?\\.csproj)\"");
-                return Path.Combine(Path.GetDirectoryName(solutionPath), matches.Groups[1].Value);
-            }).ToList();
+                var parts = line.Split('"');
+                if (parts.Length > 3)
+                {
+                    var relativePath = parts[3]; // Assuming this is the relative path
+                    var fullPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(solutionPath), relativePath));
+                    projectPaths.Add(fullPath);
+                }
+            }
+        }
 
         return projectPaths;
+    }
+
+    static void ProcessProjectPath(string projectPath, List<(string Project, string Package, string Version)> packages)
+    {
+        if (File.Exists(projectPath) && projectPath.EndsWith(".csproj"))
+        {
+            var packageReferences = ParseProjectFile(projectPath);
+            packages.AddRange(packageReferences.Select(pr => (Path.GetFileName(projectPath), pr.Package, pr.Version)));
+        }
+        else if (Directory.Exists(projectPath))
+        {
+            var csprojFiles = Directory.GetFiles(projectPath, "*.csproj", SearchOption.AllDirectories);
+            foreach (var csprojFile in csprojFiles)
+            {
+                Console.WriteLine($"Found project file: {csprojFile}");
+                var packageReferences = ParseProjectFile(csprojFile);
+                packages.AddRange(packageReferences.Select(pr => (Path.GetFileName(csprojFile), pr.Package, pr.Version)));
+            }
+        }
+        else
+        {
+            Console.WriteLine($"Resolved path is not a valid project: {projectPath}");
+        }
     }
 
     static List<(string Package, string Version)> ParseProjectFile(string projectPath)
     {
         var xdoc = XDocument.Load(projectPath);
-        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
-        var packageReferences = xdoc.Descendants(ns + "PackageReference")
+        var packageReferences = xdoc.Descendants("PackageReference")
             .Select(pr => (Package: pr.Attribute("Include")?.Value, Version: pr.Attribute("Version")?.Value))
-            .Where(pr => pr.Package != null && pr.Version != null)
+            .Where(pr => !string.IsNullOrEmpty(pr.Package) && !string.IsNullOrEmpty(pr.Version))
             .ToList();
 
         return packageReferences;
