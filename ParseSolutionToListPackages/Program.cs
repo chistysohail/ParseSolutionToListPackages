@@ -11,13 +11,13 @@ namespace CsprojFinder
         static void Main(string[] args)
         {
 
-            
+
             Console.WriteLine("Please enter the path to your directory containing the solution:");
             var rootDirectory = Console.ReadLine();
 
             if (string.IsNullOrEmpty(rootDirectory))
             {
-                Console.WriteLine("Usage: CsprojFinder <directory to search> <output CSV file path>");
+                Console.WriteLine("path to your directory containing the solution was empty/null");
                 return;
             }
 
@@ -33,18 +33,20 @@ namespace CsprojFinder
 
                 foreach (var csprojFile in csprojFiles)
                 {
+                    string projectName = Path.GetFileNameWithoutExtension(csprojFile);
                     var packages = ExtractPackageReferences(csprojFile);
+
                     if (packages.Any())
                     {
                         foreach (var package in packages)
                         {
-                            projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},{package.Item1},{package.Item2}");
+                            projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},{projectName},{package.Item1},{package.Item2}");
                             slNo++;
                         }
                     }
                     else
                     {
-                        projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},,");
+                        projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},{projectName},,");
                         slNo++;
                     }
 
@@ -53,7 +55,7 @@ namespace CsprojFinder
 
                 if (projectsWithPackages.Any())
                 {
-                    SaveToCsv(projectsWithPackages, $"{outputFile}\\packages.csv");
+                    SaveToCsv(projectsWithPackages, outputFile);
                     Console.WriteLine($"Found and saved details of {projectsWithPackages.Count} .csproj files to {outputFile}.");
                 }
                 else
@@ -91,7 +93,7 @@ namespace CsprojFinder
         {
             using (var writer = new StreamWriter(outputFile))
             {
-                writer.WriteLine("SlNo,ProjectId,Project Path,Package Name,Package Version"); // Header
+                writer.WriteLine("SlNo,ProjectId,Project Path,Project Name,Package Name,Package Version"); // Header
                 foreach (var line in dataLines)
                 {
                     writer.WriteLine(line);
