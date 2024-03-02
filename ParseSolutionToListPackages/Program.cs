@@ -55,7 +55,7 @@ namespace CsprojFinder
 
                 if (projectsWithPackages.Any())
                 {
-                    SaveToCsv(projectsWithPackages, outputFile);
+                    SaveToCsv(projectsWithPackages, $"{outputFile}\\packages.csv");
                     Console.WriteLine($"Found and saved details of {projectsWithPackages.Count} .csproj files to {outputFile}.");
                 }
                 else
