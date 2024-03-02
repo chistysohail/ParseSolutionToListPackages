@@ -10,9 +10,17 @@ namespace CsprojFinder
     {
         static void Main(string[] args)
         {
+
+            
             Console.WriteLine("Please enter the path to your directory containing the solution:");
             var rootDirectory = Console.ReadLine();
-                        
+
+            if (string.IsNullOrEmpty(rootDirectory))
+            {
+                Console.WriteLine("Usage: CsprojFinder <directory to search> <output CSV file path>");
+                return;
+            }
+
             string outputFile = rootDirectory;
 
             try
@@ -20,6 +28,8 @@ namespace CsprojFinder
                 var csprojFiles = Directory.GetFiles(rootDirectory, "*.csproj", SearchOption.AllDirectories).ToList();
 
                 var projectsWithPackages = new List<string>();
+                int slNo = 1;
+                int projectId = 1;
 
                 foreach (var csprojFile in csprojFiles)
                 {
@@ -28,13 +38,17 @@ namespace CsprojFinder
                     {
                         foreach (var package in packages)
                         {
-                            projectsWithPackages.Add($"{csprojFile},{package.Item1},{package.Item2}");
+                            projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},{package.Item1},{package.Item2}");
+                            slNo++;
                         }
                     }
                     else
                     {
-                        projectsWithPackages.Add($"{csprojFile},,");
+                        projectsWithPackages.Add($"{slNo},{projectId},{csprojFile},,");
+                        slNo++;
                     }
+
+                    projectId++;
                 }
 
                 if (projectsWithPackages.Any())
@@ -77,7 +91,7 @@ namespace CsprojFinder
         {
             using (var writer = new StreamWriter(outputFile))
             {
-                writer.WriteLine("Project Path,Package Name,Package Version"); // Header
+                writer.WriteLine("SlNo,ProjectId,Project Path,Package Name,Package Version"); // Header
                 foreach (var line in dataLines)
                 {
                     writer.WriteLine(line);
